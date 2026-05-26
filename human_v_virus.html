@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>Cyber Ethics: Human vs Virus</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Sarabun', sans-serif; }
+        #ui-layer { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10,10,30,0.95); padding: 30px; border-radius: 15px; width: 400px; text-align: center; color: #00d4ff; display: none; border: 2px solid #ff0055; box-shadow: 0 0 20px #ff0055; z-index: 100; }
+        .btn { background: #00d4ff; color: #000; border: none; padding: 15px; margin: 10px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; font-size: 18px; }
+        #start-screen { position: absolute; width: 100%; height: 100%; background: radial-gradient(circle, #1a1a2e, #000); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; z-index: 200; }
+        #stats { position: absolute; top: 20px; left: 20px; color: #00d4ff; font-size: 20px; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; border: 1px solid #00d4ff; }
+    </style>
+</head>
+<body>
+
+<div id="start-screen">
+    <h1 style="color: #00d4ff; font-size: 40px; text-shadow: 0 0 20px #00d4ff;">HUMAN VS VIRUS 3D</h1>
+    <p>เดินหน้า/ถอยหลัง: W,S | หมุนตัว: A,D</p>
+    <p style="color: #ff0055;">ระวัง! อย่าเดินชนไวรัสสีแดง คะแนนจะลดลง</p>
+    <button class="btn" style="width: 200px;" onclick="initGame()">เริ่มการเชื่อมต่อ</button>
+</div>
+
+<div id="stats">SCORE: <span id="score">0</span> | STATUS: <span id="status">SAFE</span></div>
+
+<div id="ui-layer">
+    <h2 id="q-title">SYSTEM ALERT</h2>
+    <p id="q-desc"></p>
+    <div id="options"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+    let scene, camera, renderer, player, clock;
+    let score = 0;
+    let moveF = false, moveB = false, turnL = false, turnR = false;
+    let gameActive = false;
+    let items = [], viruses = [], walls = [];
+    const bgMusic = new Audio('bgm.mp3'); bgMusic.loop = true;
+
+    // แผนที่เขาวงกต (1=กำแพง, 0=ทางเดิน, 2=โจทย์, 3=จุดเกิดไวรัส)
+    const maze = [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,1,0,0,0,0,0,1,2,0,0,1],
+        [1,0,1,0,1,0,1,1,1,0,1,1,1,0,1],
+        [1,3,1,0,0,0,0,3,0,0,0,0,0,0,1],
+        [1,0,1,1,1,1,1,1,1,0,1,1,1,0,1],
+        [1,2,0,0,0,3,0,0,1,0,0,0,2,0,1],
+        [1,1,1,1,1,1,1,0,1,1,1,1,1,1,1],
+        [1,0,0,0,0,2,1,0,0,0,0,3,0,0,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+    const unit = 10;
+
+    function initGame() {
+        document.getElementById('start-screen').style.display = 'none';
+        bgMusic.play().catch(() => {});
+        setupScene();
+        gameActive = true;
+        animate();
+    }
+
+    function setupScene() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x020205);
+        scene.fog = new THREE.Fog(0x020205, 1, 50);
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        clock = new THREE.Clock();
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const light = new THREE.PointLight(0x00d4ff, 1, 100); light.position.set(10, 10, 10); scene.add(light);
+
+        // สร้างพื้นที่และเขาวงกต
+        for(let r=0; r<maze.length; r++) {
+            for(let c=0; c<maze[r].length; c++) {
+                let px = c * unit; let pz = r * unit;
+                if(maze[r][c] === 1) createWall(px, pz);
+                if(maze[r][c] === 2) createItem(px, pz);
+                if(maze[r][c] === 3) createVirus(px, pz);
+            }
+        }
+
+        // สร้างตัวละครคน
+        createPlayer();
+    }
+
+    function createPlayer() {
+        player = new THREE.Group();
+        // ลำตัว
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.5), new THREE.MeshStandardMaterial({color: 0xcccccc}));
+        torso.position.y = 1.6;
+        player.add(torso);
+        // หัว
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.35), new THREE.MeshStandardMaterial({color: 0xffdbac}));
+        head.position.y = 2.5;
+        player.add(head);
+        // ขา
+        const legGeo = new THREE.BoxGeometry(0.3, 1, 0.3);
+        const legL = new THREE.Mesh(legGeo, new THREE.MeshStandardMaterial({color: 0x333333}));
+        legL.position.set(-0.2, 0.5, 0); player.add(legL);
+        const legR = legL.clone(); legR.position.x = 0.2; player.add(legR);
+
+        player.position.set(unit, 0, unit);
+        scene.add(player);
+    }
+
+    function createWall(x, z) {
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(unit, 6, unit), new THREE.MeshStandardMaterial({color: 0x0a0a20}));
+        wall.position.set(x, 3, z);
+        scene.add(wall);
+        const edges = new THREE.EdgesGeometry(wall.geometry);
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({color: 0x00d4ff}));
+        line.position.copy(wall.position); scene.add(line);
+        walls.push(new THREE.Box3().setFromObject(wall));
+    }
+
+    function createItem(x, z) {
+        const item = new THREE.Mesh(new THREE.IcosahedronGeometry(0.8), new THREE.MeshStandardMaterial({color: 0x00ffaa, emissive: 0x00ffaa, wireframe: true}));
+        item.position.set(x, 1.5, z);
+        scene.add(item);
+        items.push({ mesh: item, active: true });
+    }
+
+    function createVirus(x, z) {
+        const virus = new THREE.Mesh(new THREE.OctahedronGeometry(0.8, 0), new THREE.MeshStandardMaterial({color: 0xff0055, emissive: 0x550000}));
+        virus.position.set(x, 1.5, z);
+        scene.add(virus);
+        viruses.push(virus);
+    }
+
+    window.onkeydown = (e) => {
+        if(e.code==='KeyW' || e.code==='ArrowUp') moveF = true;
+        if(e.code==='KeyS' || e.code==='ArrowDown') moveB = true;
+        if(e.code==='KeyA' || e.code==='ArrowLeft') turnL = true;
+        if(e.code==='KeyD' || e.code==='ArrowRight') turnR = true;
+    };
+    window.onkeyup = (e) => {
+        if(e.code==='KeyW' || e.code==='ArrowUp') moveF = false;
+        if(e.code==='KeyS' || e.code==='ArrowDown') moveB = false;
+        if(e.code==='KeyA' || e.code==='ArrowLeft') turnL = false;
+        if(e.code==='KeyD' || e.code==='ArrowRight') turnR = false;
+    };
+
+    function animate() {
+        if(!gameActive) return;
+        requestAnimationFrame(animate);
+        let d = clock.getDelta();
+
+        if(turnL) player.rotation.y += 2.5 * d;
+        if(turnR) player.rotation.y -= 2.5 * d;
+        
+        let dir = new THREE.Vector3(0,0,-1).applyQuaternion(player.quaternion);
+        let oldPos = player.position.clone();
+        
+        if(moveF) player.position.addScaledVector(dir, 7 * d);
+        if(moveB) player.position.addScaledVector(dir, -7 * d);
+
+        // ระบบชนกำแพงแบบง่าย
+        let playerBox = new THREE.Box3().setFromObject(player);
+        for(let wall of walls) {
+            if(playerBox.intersectsBox(wall)) { player.position.copy(oldPos); break; }
+        }
+
+        // กล้องบุคคลที่ 3
+        let camPos = new THREE.Vector3(0, 5, 10).applyQuaternion(player.quaternion).add(player.position);
+        camera.position.lerp(camPos, 0.1);
+        camera.lookAt(player.position.x, player.position.y + 2, player.position.z);
+
+        // เช็คการชนโจทย์
+        items.forEach((item, i) => {
+            if(item.active && player.position.distanceTo(item.mesh.position) < 2) {
+                gameActive = false; showUI(i);
+            }
+            item.mesh.rotation.y += 0.02;
+        });
+
+        // เช็คการชนไวรัส
+        viruses.forEach(v => {
+            v.rotation.x += 0.05; v.rotation.z += 0.05;
+            if(player.position.distanceTo(v.position) < 1.5) {
+                score -= 1; document.getElementById('score').innerText = score;
+                document.getElementById('status').innerText = "INFECTED!";
+                document.getElementById('status').style.color = "#ff0055";
+                setTimeout(() => { document.getElementById('status').innerText = "SAFE"; document.getElementById('status').style.color = "#00d4ff"; }, 1000);
+            }
+        });
+
+        renderer.render(scene, camera);
+    }
+
+    const qBank = [
+        {t:"PDPA Alert!", d:"พนักงานฝ่ายขายต้องการแชร์เบอร์โทรลูกค้าลงในกลุ่ม LINE ส่วนตัวเพื่อถามงาน คุณจะทำอย่างไร?", c:[{text:"อนุญาตเพราะเป็นเรื่องงาน", s:-20},{text:"ปฏิเสธและเตือนเรื่องกฎหมายข้อมูลส่วนบุคคล", s:20}]},
+        {t:"Social Engineering", d:"มีคนโทรมาอ้างว่าเป็นฝ่ายไอที ขอมินิรหัสผ่านเพื่อรีเซ็ตระบบด่วน...", c:[{text:"ให้ไปทันทีเพื่อความรวดเร็ว", s:-30},{text:"วางสายและเช็คกับฝ่ายไอทีโดยตรง", s:20}]},
+        {t:"Copyright", d:"คุณต้องการใช้ภาพจากเน็ตมาประกอบพรีเซนต์บริษัท...", c:[{text:"ก๊อปมาเลยไม่มีใครรู้หรอก", s:-10},{text:"หาภาพที่เป็น Creative Commons และอ้างอิง", s:20}]}
+    ];
+
+    function showUI(i) {
+        const q = qBank[i % qBank.length];
+        document.getElementById('q-title').innerText = q.t;
+        document.getElementById('q-desc').innerText = q.d;
+        const opt = document.getElementById('options');
+        opt.innerHTML = '';
+        q.c.forEach(choice => {
+            const b = document.createElement('button'); b.className = 'btn'; b.innerText = choice.text;
+            b.onclick = () => {
+                score += choice.s; document.getElementById('score').innerText = score;
+                document.getElementById('ui-layer').style.display = 'none';
+                items[i].active = false; scene.remove(items[i].mesh);
+                gameActive = true; animate();
+            };
+            opt.appendChild(b);
+        });
+        document.getElementById('ui-layer').style.display = 'block';
+    }
+</script>
+</body>
+</html>
